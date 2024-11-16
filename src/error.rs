@@ -19,7 +19,10 @@ pub enum ParserError {
     },
     UnexpectedValue(String),
     FailedToParseAttribute,
-    InvalidValueForAttribute(String),
+    InvalidValueForAttribute {
+        name: String,
+        value: String,
+    },
     MissingRequiredAttribute(String),
     UnexpectedEof,
 }

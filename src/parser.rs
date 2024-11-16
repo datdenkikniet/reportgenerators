@@ -47,7 +47,7 @@ macro_rules! set_required_attributes {
 
             $(
                 if name == $str_name {
-                    $field = Some(value.parse().map_err(|_| ParserError::InvalidValueForAttribute(utf8_attr($str_name)))?);
+                    $field = Some(value.parse().map_err(|_| ParserError::InvalidValueForAttribute{ name: utf8_attr($str_name), value: value.to_string() })?);
                 }
             )*
         }
@@ -472,22 +472,21 @@ impl ParserInner {
                 let attribute = attribute.map_err(|_| ParserError::FailedToParseAttribute)?;
                 let value = attribute.unescape_value().unwrap();
 
+                let err = || ParserError::InvalidValueForAttribute {
+                    name: utf8_attr(attribute.key),
+                    value: value.to_string(),
+                };
+
                 if attribute.key.as_ref() == b"number" {
-                    number = Some(value.parse().map_err(|_| {
-                        ParserError::InvalidValueForAttribute(utf8_attr(attribute.key))
-                    })?);
+                    number = Some(value.parse().map_err(|_| err())?);
                 }
 
                 if attribute.key.as_ref() == b"hits" {
-                    hits = Some(value.parse().map_err(|_| {
-                        ParserError::InvalidValueForAttribute(utf8_attr(attribute.key))
-                    })?);
+                    hits = Some(value.parse().map_err(|_| err())?);
                 }
 
                 if attribute.key.as_ref() == b"branch" {
-                    line.branch = value.parse().map_err(|_| {
-                        ParserError::InvalidValueForAttribute(utf8_attr(attribute.key))
-                    })?;
+                    line.branch = value.parse().map_err(|_| err())?;
                 }
 
                 if attribute.key.as_ref() == b"condition-coverage" {

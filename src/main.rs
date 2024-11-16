@@ -1,11 +1,17 @@
 use cobertura_rs::*;
 use quick_xml::Reader;
 
-fn main() {
-    let mut reader = Reader::from_file(std::env::args().skip(1).next().unwrap()).unwrap();
+fn main() -> Result<(), &'static str> {
+    let file = std::env::args()
+        .nth(1)
+        .expect("First argument should be the path to the cobertura coverage file.");
+
+    let mut reader = Reader::from_file(file).expect("Failed to open file.");
     let mut state = Parser::new();
 
-    let coverage = state.parse(&mut reader).unwrap();
+    let coverage = state
+        .parse(&mut reader)
+        .expect("Failed to parse coverage file.");
 
     let all_lines = coverage.lines();
 
@@ -14,11 +20,17 @@ fn main() {
             (total_lines + 1, hit_lines + (line.hits > 0) as usize)
         });
 
+    let calculated_line_rate = hit_lines as f64 / total_lines as f64;
+
     println!(
         "{}, {}, {}, {}",
-        total_lines,
-        hit_lines,
-        (hit_lines as f64 / total_lines as f64),
-        coverage.line_rate
+        total_lines, hit_lines, calculated_line_rate, coverage.line_rate
     );
+
+    if calculated_line_rate != coverage.line_rate {
+        Err("Reported coverage line rate does not match calculated line rate.")
+    } else {
+        println!("All OK :)");
+        Ok(())
+    }
 }
