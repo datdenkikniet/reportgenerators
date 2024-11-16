@@ -5,7 +5,7 @@ use quick_xml::{
     Reader,
 };
 
-use crate::{Class, Condition, Coverage, Line, Method, Package, Source};
+use crate::{Class, Condition, Coverage, Line, Method, Package, ParserError, Source};
 
 #[derive(Debug)]
 pub enum FilteredEvent<'a> {
@@ -32,16 +32,6 @@ impl<'a> FilteredEvent<'a> {
 
 fn utf8_attr(input: impl AsRef<[u8]>) -> String {
     String::from_utf8_lossy(input.as_ref()).to_string()
-}
-
-fn utf8_start(input: impl AsRef<[u8]>) -> String {
-    let name = String::from_utf8_lossy(input.as_ref());
-    format!("<{name}>")
-}
-
-fn utf8_end(input: impl AsRef<[u8]>) -> String {
-    let name = String::from_utf8_lossy(input.as_ref());
-    format!("</{name}>")
 }
 
 macro_rules! set_required_attributes {
@@ -74,20 +64,6 @@ macro_rules! set_required_attributes {
 
 pub struct Parser {
     inner: Option<ParserInner>,
-}
-
-#[derive(Debug)]
-pub enum ParserError {
-    ExpectedStart(String),
-    ExpectedEnd(String),
-    ExpectedStartOrEnd(String),
-    UnexpectedStart(String),
-    UnexpectedEnd(String),
-    UnexpectedValue(String),
-    FailedToParseAttribute,
-    InvalidValueForAttribute(String),
-    MissingRequiredAttribute(String),
-    UnexpectedEof,
 }
 
 impl Parser {
@@ -144,11 +120,11 @@ impl Parser {
     fn parse_coverage(&mut self, event: &FilteredEvent) -> Result<(), ParserError> {
         let start = match event {
             FilteredEvent::Start(start) => start,
-            _ => return Err(ParserError::ExpectedStart("<coverage>".to_string())),
+            evt => return Err(ParserError::start(evt, ["coverage"])),
         };
 
         if start.name().as_ref() != b"coverage" {
-            return Err(ParserError::UnexpectedStart(utf8_start(start.name())));
+            return Err(ParserError::start(event, ["coverage"]));
         }
 
         let mut coverage = Coverage::default();
@@ -212,23 +188,27 @@ pub enum State {
 }
 
 macro_rules ! transition {
-    (basic($start:expr), $unexpected:ident, $map_name:ident, $($name:literal => $to:ident$( with $op:expr)?),*$(,)?) => {{
+    (basic($value:expr), $unexpected:ident, $($name:literal => $to:ident$( with $op:expr)?),*$(,)?) => {{
         $(
-            if $start.name().as_ref() == $name.as_bytes() {
+            if $value.name().as_ref() == $name.as_bytes() {
                 $($op;)?
                 return Ok(State::$to);
             }
         )*
 
-        return Err(ParserError::$unexpected($map_name($start.name())));
+        let names = [
+            $($name,)*
+        ];
+
+        return Err(ParserError::$unexpected($value, names));
     }};
 
     (basic_start($start:expr), $($name:literal => $to:ident$( with $op:expr)?),*$(,)?) => {
-        transition!(basic($start), UnexpectedStart, utf8_start, $($name => $to $(with $op)?,)*)
+        transition!(basic($start), start, $($name => $to $(with $op)?,)*)
     };
 
     (basic_end($start:expr), $($name:literal => $to:ident$( with $op:expr)?),*$(,)?) => {
-        transition!(basic($start), UnexpectedEnd, utf8_end, $($name => $to $(with $op)?,)*)
+        transition!(basic($start), end, $($name => $to $(with $op)?,)*)
     };
 }
 
@@ -281,13 +261,13 @@ impl ParserInner {
                 };
             }
             FilteredEvent::End(end) => {
-                if end.name().as_ref() == b"coverage" {
-                    Ok(State::End)
-                } else {
-                    return Err(ParserError::ExpectedEnd(utf8_end(end.name())));
-                }
+                transition!(basic_end(end), "coverage" => End);
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(
+                evt,
+                ["sources", "packages"],
+                ["coverage"],
+            )),
         }
     }
 
@@ -299,7 +279,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "sources" => ParsingCoverage);
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["source"], ["sources"])),
         }
     }
 
@@ -317,7 +297,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "source" => ParsingSources)
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["text"], ["source"])),
         }
     }
 
@@ -336,13 +316,13 @@ impl ParserInner {
 
                     Ok(State::ParsingPackage)
                 } else {
-                    Err(ParserError::UnexpectedStart(utf8_start(start.name())))
+                    Err(ParserError::start(event, ["package"]))
                 }
             }
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "packages" => ParsingCoverage)
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["package"], ["packages"])),
         }
     }
 
@@ -359,7 +339,7 @@ impl ParserInner {
                 let package = std::mem::take(package);
                 transition!(basic_end(end), "package" => ParsingPackages with coverage.packages.push(package))
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["classes"], ["package"])),
         }
     }
 
@@ -383,14 +363,14 @@ impl ParserInner {
 
                     Ok(State::ParsingClass)
                 } else {
-                    Err(ParserError::UnexpectedStart(utf8_start(start.name())))
+                    Err(ParserError::start(event, ["class"]))
                 }
             }
             FilteredEvent::End(end) => {
                 let class = std::mem::take(class);
                 transition!(basic_end(end), "classes" => ParsingPackage with package.classes.push(class))
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["class"], ["classes"])),
         }
     }
 
@@ -406,7 +386,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "class" => ParsingClasses)
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["methods", "lines"], ["class"])),
         }
     }
 
@@ -429,14 +409,14 @@ impl ParserInner {
 
                     Ok(State::ParsingMethod)
                 } else {
-                    Err(ParserError::UnexpectedStart(utf8_start(start.name())))
+                    Err(ParserError::start(event, ["method"]))
                 }
             }
             FilteredEvent::End(end) => {
                 let method = std::mem::take(method);
                 transition!(basic_end(end), "methods" => ParsingClass with class.methods.push(method))
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["method"], ["methods"])),
         }
     }
 
@@ -448,7 +428,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "method" => ParsingMethods)
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["lines"], ["method"])),
         }
     }
 
@@ -462,7 +442,7 @@ impl ParserInner {
     ) -> Result<State, ParserError> {
         let mut load_lines = |start: &BytesStart| {
             if start.name().as_ref() != b"line" {
-                return Err(ParserError::UnexpectedStart(utf8_start(start.name())));
+                return Err(ParserError::start(event, ["line"]));
             }
 
             let attributes = start.attributes();
@@ -531,10 +511,10 @@ impl ParserInner {
                     lines.push(line);
                     Ok(on_end)
                 } else {
-                    Err(ParserError::UnexpectedEnd(utf8_end(end.name())))
+                    Err(ParserError::end(event, ["lines"]))
                 }
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["line"], ["lines"])),
         }
     }
 
@@ -575,7 +555,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "line" => ParsingMethodLines);
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["conditions"], ["line"])),
         }
     }
 
@@ -587,7 +567,7 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "line" => ParsingClassLines);
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["conditions"], ["line"])),
         }
     }
 
@@ -613,17 +593,17 @@ impl ParserInner {
 
                     Ok(on_attr_only)
                 } else {
-                    Err(ParserError::UnexpectedStart(utf8_start(start.name())))
+                    Err(ParserError::start(event, ["condition"]))
                 }
             }
             FilteredEvent::End(end) => {
                 if end.name().as_ref() == b"conditions" {
                     Ok(on_end)
                 } else {
-                    Err(ParserError::UnexpectedEnd(utf8_end(end.name())))
+                    Err(ParserError::end(event, ["conditions"]))
                 }
             }
-            _ => todo!(),
+            evt => Err(ParserError::start_end(evt, ["condition"], ["conditions"])),
         }
     }
 
