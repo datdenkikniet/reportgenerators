@@ -75,7 +75,7 @@ impl Parser {
         self.inner.take();
     }
 
-    pub fn parse<R>(&mut self, mut reader: Reader<R>) -> Result<Coverage, ParserError>
+    pub fn parse<R>(&mut self, reader: &mut Reader<R>) -> Result<Coverage, ParserError>
     where
         R: BufRead,
     {
@@ -263,6 +263,13 @@ impl ParserInner {
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "coverage" => End);
             }
+            FilteredEvent::AttributesOnly(start) => {
+                transition! {
+                    basic_start(start),
+                    "sources" => ParsingCoverage,
+                    "packages" => ParsingCoverage,
+                };
+            }
             evt => Err(ParserError::start_end(
                 evt,
                 ["sources", "packages"],
@@ -339,6 +346,9 @@ impl ParserInner {
                 let package = std::mem::take(package);
                 transition!(basic_end(end), "package" => ParsingPackages with coverage.packages.push(package))
             }
+            FilteredEvent::AttributesOnly(start) => {
+                transition!(basic_start(start), "classes" => ParsingPackage)
+            }
             evt => Err(ParserError::start_end(evt, ["classes"], ["package"])),
         }
     }
@@ -385,6 +395,13 @@ impl ParserInner {
             }
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "class" => ParsingClasses)
+            }
+            FilteredEvent::AttributesOnly(start) => {
+                transition! {
+                    basic_start(start),
+                    "methods" => ParsingClass,
+                    "lines" => ParsingClass,
+                }
             }
             evt => Err(ParserError::start_end(evt, ["methods", "lines"], ["class"])),
         }
@@ -547,6 +564,7 @@ impl ParserInner {
             State::ParsingClass,
         )
     }
+
     fn in_method_line(event: &FilteredEvent) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
@@ -554,6 +572,9 @@ impl ParserInner {
             }
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "line" => ParsingMethodLines);
+            }
+            FilteredEvent::AttributesOnly(start) => {
+                transition!(basic_start(start), "conditions" => ParsingMethodLine);
             }
             evt => Err(ParserError::start_end(evt, ["conditions"], ["line"])),
         }
@@ -566,6 +587,9 @@ impl ParserInner {
             }
             FilteredEvent::End(end) => {
                 transition!(basic_end(end), "line" => ParsingClassLines);
+            }
+            FilteredEvent::AttributesOnly(start) => {
+                transition!(basic_start(start), "conditions" => ParsingClassLine);
             }
             evt => Err(ParserError::start_end(evt, ["conditions"], ["line"])),
         }

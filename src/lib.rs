@@ -22,6 +22,20 @@ pub struct Coverage {
     pub timestamp: u64,
 }
 
+impl Coverage {
+    pub fn lines(&self) -> impl Iterator<Item = &Line> {
+        self.packages
+            .iter()
+            .flat_map(|p| p.classes.iter())
+            .flat_map(|c| {
+                let class_lines = c.lines.iter();
+                // let method_lines = c.methods.iter().flat_map(|m| m.lines.iter());
+                // class_lines.chain(method_lines)
+                class_lines
+            })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Source {
     // Until we find a difference.
