@@ -1,3 +1,7 @@
+mod parser;
+
+pub use parser::{FilteredEvent, Parser};
+
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default)]
@@ -18,8 +22,8 @@ pub struct Coverage {
 
 #[derive(Debug, Clone, Default)]
 pub struct Source {
-    // For now
-    pub data: String,
+    // Until we find a difference.
+    _data: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -56,6 +60,7 @@ pub struct Line {
     pub conditions: Vec<Condition>,
     pub number: usize,
     pub hits: usize,
+    pub branch: bool,
     // Almost always in the following form `X% (Y/Z)`
     pub condition_coverage: Option<String>,
 }
