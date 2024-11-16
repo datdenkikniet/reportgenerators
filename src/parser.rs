@@ -234,10 +234,10 @@ impl ParserInner {
             State::ParsingMethods => Self::in_methods(class, method, event),
             State::ParsingMethod => Self::in_method(event),
             State::ParsingMethodLines => Self::in_method_lines(method, line, event),
-            State::ParsingMethodLine => Self::in_method_line(event),
+            State::ParsingMethodLine => Self::in_method_line(method, line, event),
             State::ParsingMethodLineConditions => Self::in_method_line_conditions(line, event),
             State::ParsingClassLines => Self::in_class_lines(class, line, event),
-            State::ParsingClassLine => Self::in_class_line(event),
+            State::ParsingClassLine => Self::in_class_line(class, line, event),
             State::ParsingClassLineConditions => Self::in_class_line_conditions(line, event),
             State::End => panic!("Consuming more after end event."),
         }?;
@@ -524,8 +524,6 @@ impl ParserInner {
             }
             FilteredEvent::End(end) => {
                 if end.name().as_ref() == b"lines" {
-                    let line = std::mem::take(line);
-                    lines.push(line);
                     Ok(on_end)
                 } else {
                     Err(ParserError::end(event, ["lines"]))
@@ -565,13 +563,18 @@ impl ParserInner {
         )
     }
 
-    fn in_method_line(event: &FilteredEvent) -> Result<State, ParserError> {
+    fn in_method_line(
+        method: &mut Method,
+        line: &mut Line,
+        event: &FilteredEvent,
+    ) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 transition!(basic_start(start), "conditions" => ParsingMethodLineConditions);
             }
             FilteredEvent::End(end) => {
-                transition!(basic_end(end), "line" => ParsingMethodLines);
+                let line = std::mem::take(line);
+                transition!(basic_end(end), "line" => ParsingMethodLines with method.lines.push(line));
             }
             FilteredEvent::AttributesOnly(start) => {
                 transition!(basic_start(start), "conditions" => ParsingMethodLine);
@@ -580,13 +583,18 @@ impl ParserInner {
         }
     }
 
-    fn in_class_line(event: &FilteredEvent) -> Result<State, ParserError> {
+    fn in_class_line(
+        class: &mut Class,
+        line: &mut Line,
+        event: &FilteredEvent,
+    ) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 transition!(basic_start(start), "conditions" => ParsingClassLineConditions);
             }
             FilteredEvent::End(end) => {
-                transition!(basic_end(end), "line" => ParsingClassLines);
+                let line = std::mem::take(line);
+                transition!(basic_end(end), "line" => ParsingClassLines with class.lines.push(line));
             }
             FilteredEvent::AttributesOnly(start) => {
                 transition!(basic_start(start), "conditions" => ParsingClassLine);
