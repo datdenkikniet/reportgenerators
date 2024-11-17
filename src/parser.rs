@@ -34,8 +34,24 @@ fn utf8_attr(input: impl AsRef<[u8]>) -> String {
     String::from_utf8_lossy(input.as_ref()).to_string()
 }
 
-macro_rules! set_required_attributes {
-    ($set_on:expr, $attributes:expr, $([$str_name:literal, $ty:ty, $field:ident],)*) => {{
+macro_rules! set_attributes {
+    (field: $set_on:expr, $field:ident, $str_name:literal) => {
+        set_attributes!(field: $set_on, $field, $str_name, false)
+    };
+
+    (field: $set_on:expr, $field:ident, $str_name:literal, false) => {
+        if let Some(value) = $field {
+            $set_on.$field = value;
+        } else {
+            return Err(ParserError::MissingRequiredAttribute(utf8_attr($str_name)));
+        }
+    };
+
+    (field: $set_on:expr, $field:ident, $str_name:literal, true) => {
+        $set_on.$field = $field.unwrap_or_default();
+    };
+
+    ($set_on:expr, $attributes:expr, $([$str_name:literal, $ty:ty, $field:ident$(, optional = $optional_value:tt)?],)*) => {{
         $(
             let mut $field: Option<$ty> = None;
         )*
@@ -53,13 +69,9 @@ macro_rules! set_required_attributes {
         }
 
         $(
-            if let Some(value) = $field {
-                $set_on.$field = value;
-            } else {
-                return Err(ParserError::MissingRequiredAttribute(utf8_attr($str_name)));
-            }
+            set_attributes!(field: $set_on, $field, $str_name$(, $optional_value)?);
         )*
-    }}
+    }};
 }
 
 pub struct Parser {
@@ -130,7 +142,7 @@ impl Parser {
         let mut coverage = Coverage::default();
         let attributes = start.attributes();
 
-        set_required_attributes!(
+        set_attributes!(
             coverage,
             attributes,
             [b"line-rate", f64, line_rate],
@@ -141,7 +153,7 @@ impl Parser {
             [b"branches-valid", usize, branches_valid],
             [b"complexity", f64, complexity],
             [b"version", String, version],
-            [b"timestamp", u64, timestamp],
+            [b"timestamp", u64, timestamp, optional = true],
         );
 
         self.inner = Some(ParserInner {
@@ -312,7 +324,7 @@ impl ParserInner {
         match event {
             FilteredEvent::Start(start) => {
                 if start.name().as_ref() == b"package" {
-                    set_required_attributes!(
+                    set_attributes!(
                         package,
                         start.attributes(),
                         [b"name", String, name],
@@ -361,7 +373,7 @@ impl ParserInner {
         match event {
             FilteredEvent::Start(start) => {
                 if start.name().as_ref() == b"class" {
-                    set_required_attributes!(
+                    set_attributes!(
                         class,
                         start.attributes(),
                         [b"name", String, name],
@@ -415,7 +427,7 @@ impl ParserInner {
         match event {
             FilteredEvent::Start(start) => {
                 if start.name().as_ref() == b"method" {
-                    set_required_attributes!(
+                    set_attributes!(
                         method,
                         start.attributes(),
                         [b"name", String, name],
@@ -613,7 +625,7 @@ impl ParserInner {
                 if start.name().as_ref() == b"condition" {
                     let mut condition = Condition::default();
 
-                    set_required_attributes!(
+                    set_attributes!(
                         condition,
                         start.attributes(),
                         [b"type", String, r#type],
