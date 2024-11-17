@@ -27,12 +27,7 @@ impl Coverage {
         self.packages
             .iter()
             .flat_map(|p| p.classes.iter())
-            .flat_map(|c| {
-                let class_lines = c.lines.iter();
-                // let method_lines = c.methods.iter().flat_map(|m| m.lines.iter());
-                // class_lines.chain(method_lines)
-                class_lines
-            })
+            .flat_map(|c| c.lines.iter())
     }
 }
 
