@@ -241,10 +241,10 @@ impl ParserInner {
             State::ParsingSource => Self::in_source(coverage, event),
             State::ParsingPackages => Self::in_packages(package, event),
             State::ParsingPackage => Self::in_package(coverage, package, event),
-            State::ParsingClasses => Self::in_classes(package, class, event),
-            State::ParsingClass => Self::in_class(event),
-            State::ParsingMethods => Self::in_methods(class, method, event),
-            State::ParsingMethod => Self::in_method(event),
+            State::ParsingClasses => Self::in_classes(class, event),
+            State::ParsingClass => Self::in_class(package, class, event),
+            State::ParsingMethods => Self::in_methods(method, event),
+            State::ParsingMethod => Self::in_method(class, method, event),
             State::ParsingMethodLines => Self::in_method_lines(method, line, event),
             State::ParsingMethodLine => Self::in_method_line(method, line, event),
             State::ParsingMethodLineConditions => Self::in_method_line_conditions(line, event),
@@ -365,11 +365,7 @@ impl ParserInner {
         }
     }
 
-    fn in_classes(
-        package: &mut Package,
-        class: &mut Class,
-        event: &FilteredEvent,
-    ) -> Result<State, ParserError> {
+    fn in_classes(class: &mut Class, event: &FilteredEvent) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 if start.name().as_ref() == b"class" {
@@ -383,20 +379,25 @@ impl ParserInner {
                         [b"complexity", f64, complexity],
                     );
 
+                    println!("{}", class.name);
+
                     Ok(State::ParsingClass)
                 } else {
                     Err(ParserError::start(event, ["class"]))
                 }
             }
             FilteredEvent::End(end) => {
-                let class = std::mem::take(class);
-                transition!(basic_end(end), "classes" => ParsingPackage with package.classes.push(class))
+                transition!(basic_end(end), "classes" => ParsingPackage)
             }
             evt => Err(ParserError::start_end(evt, ["class"], ["classes"])),
         }
     }
 
-    fn in_class(event: &FilteredEvent) -> Result<State, ParserError> {
+    fn in_class(
+        package: &mut Package,
+        class: &mut Class,
+        event: &FilteredEvent,
+    ) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 transition! {
@@ -406,7 +407,8 @@ impl ParserInner {
                 }
             }
             FilteredEvent::End(end) => {
-                transition!(basic_end(end), "class" => ParsingClasses)
+                let class = std::mem::take(class);
+                transition!(basic_end(end), "class" => ParsingClasses with package.classes.push(class));
             }
             FilteredEvent::AttributesOnly(start) => {
                 transition! {
@@ -419,11 +421,7 @@ impl ParserInner {
         }
     }
 
-    fn in_methods(
-        class: &mut Class,
-        method: &mut Method,
-        event: &FilteredEvent,
-    ) -> Result<State, ParserError> {
+    fn in_methods(method: &mut Method, event: &FilteredEvent) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 if start.name().as_ref() == b"method" {
@@ -442,20 +440,24 @@ impl ParserInner {
                 }
             }
             FilteredEvent::End(end) => {
-                let method = std::mem::take(method);
-                transition!(basic_end(end), "methods" => ParsingClass with class.methods.push(method))
+                transition!(basic_end(end), "methods" => ParsingClass)
             }
             evt => Err(ParserError::start_end(evt, ["method"], ["methods"])),
         }
     }
 
-    fn in_method(event: &FilteredEvent) -> Result<State, ParserError> {
+    fn in_method(
+        class: &mut Class,
+        method: &mut Method,
+        event: &FilteredEvent,
+    ) -> Result<State, ParserError> {
         match event {
             FilteredEvent::Start(start) => {
                 transition!(basic_start(start), "lines" => ParsingMethodLines)
             }
             FilteredEvent::End(end) => {
-                transition!(basic_end(end), "method" => ParsingMethods)
+                let method = std::mem::take(method);
+                transition!(basic_end(end), "method" => ParsingMethods with class.methods.push(method))
             }
             evt => Err(ParserError::start_end(evt, ["lines"], ["method"])),
         }
