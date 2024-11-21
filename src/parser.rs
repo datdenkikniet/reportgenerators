@@ -379,8 +379,6 @@ impl ParserInner {
                         [b"complexity", f64, complexity],
                     );
 
-                    println!("{}", class.name);
-
                     Ok(State::ParsingClass)
                 } else {
                     Err(ParserError::start(event, ["class"]))

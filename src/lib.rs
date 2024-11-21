@@ -1,7 +1,9 @@
 mod error;
+mod html;
 mod parser;
 
 pub use error::ParserError;
+pub use html::HtmlGenerator;
 pub use parser::{FilteredEvent, Parser};
 
 use std::path::PathBuf;
@@ -26,7 +28,7 @@ impl Coverage {
     pub fn lines(&self) -> impl Iterator<Item = &Line> {
         self.packages
             .iter()
-            .flat_map(|p| p.classes.iter())
+            .flat_map(|p| &p.classes)
             .flat_map(|c| c.lines.iter())
     }
 }
